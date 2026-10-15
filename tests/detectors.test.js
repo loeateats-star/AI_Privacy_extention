@@ -53,7 +53,6 @@ test('no top-level domain', () => expectNone('ssh root@localhost', 'EMAIL'));
 
 console.log('PHONE');
 test('dashes', () => expectFound('call 415-555-0132', 'PHONE', '415-555-0132'));
-test('order number without separators', () => expectNone('Order #4155550132 shipped', 'PHONE'));
 test('date is not a phone', () => expectNone('due 2024-01-15', 'PHONE'));
 test('longer dashed id', () => expectNone('part 415-555-0132-77', 'PHONE'));
 test('phone at end of sentence', () => expectFound('My number is 415-555-0132.', 'PHONE', '415-555-0132'));
@@ -96,6 +95,26 @@ test('curly apostrophe', () => expectFound('I’ve been diagnosed with ADHD', 'C
 test('question about passwords', () => expectNone('what is a good password manager?', 'CONTEXT'));
 test('address phrase', () => expectFound('my address is 12 maple grove, springfield', 'CONTEXT', '12 maple grove, springfield'));
 test('stops at end of sentence', () => expectFound('My PIN is 4821. Thanks', 'CONTEXT', '4821'));
+
+console.log('PASSWORD WORDS');
+test('password with a colon', () => expectFound('my password: hunter2', 'CONTEXT', 'hunter2'));
+test('password with an equals sign', () => expectFound('Password = hunter2', 'CONTEXT', 'hunter2'));
+test('pin is', () => expectFound('my pin is 4821.', 'CONTEXT', '4821'));
+test('password manager is not a password', () => expectNone('which password manager is best?', 'CONTEXT'));
+
+console.log('NUMBERS IN A ROW');
+test('phone with dots', () => expectFound('text me 415.555.0132', 'PHONE', '415.555.0132'));
+test('phone with brackets', () => expectFound('call (415) 555-0132', 'PHONE', '(415) 555-0132'));
+test('phone with spaces', () => expectFound('call +1 415 555 0132', 'PHONE', '+1 415 555 0132'));
+test('phone with no spaces', () => expectFound('call 4155550132', 'PHONE', '4155550132'));
+test('account number in pieces', () => expectFound('acct 12 3456 789', 'NUMBERS', '12 3456 789'));
+test('small numbers are fine', () => expectNone('I have 3 dogs and 2 cats', 'NUMBERS'));
+
+console.log('NAME');
+test('first and last name', () => expectFound('Ask Sarah Johnson about it', 'NAME', 'Sarah Johnson'));
+test('first name only', () => expectFound('Tell Emily I said hi', 'NAME', 'Emily'));
+test('last name only', () => expectFound('Meeting with Mr Patel', 'NAME', 'Patel'));
+test('lowercase is not a name', () => expectNone('the james webb telescope', 'NAME'));
 
 console.log('scanText behaviour');
 test('overlapping matches: the specific detector wins', () => {
