@@ -1,0 +1,123 @@
+/*
+ * Tests for src/detectors.js. No test framework, just Node's built-in assert.
+ *
+ * Run from the project folder:
+ *   node tests/detectors.test.js
+ */
+'use strict';
+
+const assert = require('node:assert');
+const { scanText, redactText } = require('../src/detectors.js');
+
+let passed = 0;
+let failed = 0;
+
+function test(name, fn) {
+  try {
+    fn();
+    passed++;
+    console.log(`  ok    ${name}`);
+  } catch (err) {
+    failed++;
+    console.log(`  FAIL  ${name}\n        ${err.message}`);
+  }
+}
+
+/** Asserts that `text` contains a match of `type` whose text is `expected`. */
+function expectFound(text, type, expected) {
+  const matches = scanText(text).filter((m) => m.type === type);
+  const texts = matches.map((m) => m.text);
+  assert.ok(
+    texts.includes(expected),
+    `expected ${type} "${expected}" in "${text}", got ${JSON.stringify(texts)}`
+  );
+  // The indexes must point at the matched text.
+  for (const m of matches) assert.strictEqual(text.slice(m.start, m.end), m.text);
+}
+
+/** Asserts that `text` contains no match of `type`. */
+function expectNone(text, type) {
+  const matches = scanText(text).filter((m) => m.type === type);
+  assert.strictEqual(
+    matches.length,
+    0,
+    `expected no ${type} in "${text}", got ${JSON.stringify(matches.map((m) => m.text))}`
+  );
+}
+
+console.log('EMAIL');
+test('plain address', () => expectFound('reach me at jane.doe@example.com today', 'EMAIL', 'jane.doe@example.com'));
+test('plus addressing', () => expectFound('a+filter@mail.co.uk', 'EMAIL', 'a+filter@mail.co.uk'));
+test('social handle is not an email', () => expectNone('follow @jane_doe on X', 'EMAIL'));
+test('no top-level domain', () => expectNone('ssh root@localhost', 'EMAIL'));
+
+console.log('PHONE');
+test('dashes', () => expectFound('call 415-555-0132', 'PHONE', '415-555-0132'));
+test('order number without separators', () => expectNone('Order #4155550132 shipped', 'PHONE'));
+test('date is not a phone', () => expectNone('due 2024-01-15', 'PHONE'));
+test('longer dashed id', () => expectNone('part 415-555-0132-77', 'PHONE'));
+test('phone at end of sentence', () => expectFound('My number is 415-555-0132.', 'PHONE', '415-555-0132'));
+
+console.log('SSN');
+test('standard format', () => expectFound('my ssn 123-45-6789', 'SSN', '123-45-6789'));
+test('longer serial', () => expectNone('Order 123-45-67890', 'SSN'));
+
+console.log('CREDIT_CARD');
+test('Visa with spaces', () => expectFound('card 4111 1111 1111 1111 exp 12/29', 'CREDIT_CARD', '4111 1111 1111 1111'));
+test('Mastercard with dashes', () => expectFound('5555-5555-5555-4444', 'CREDIT_CARD', '5555-5555-5555-4444'));
+test('Amex, 15 digits', () => expectFound('amex 378282246310005', 'CREDIT_CARD', '378282246310005'));
+test('12 digits is too short', () => expectNone('tracking 411111111111', 'CREDIT_CARD'));
+
+console.log('API_KEY');
+test('OpenAI project key', () =>
+  expectFound('key: sk-proj-Ab3dEf6hIj9kLm2nOp5qRs8t', 'API_KEY', 'sk-proj-Ab3dEf6hIj9kLm2nOp5qRs8t'));
+test('AWS access key id', () => expectFound('AKIAIOSFODNN7EXAMPLE', 'API_KEY', 'AKIAIOSFODNN7EXAMPLE'));
+test('GitHub token', () => {
+  const token = 'ghp_' + 'a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8';
+  expectFound(`my token is ${token}`, 'API_KEY', token);
+});
+test('short sk- string', () => expectNone('use sk-short here', 'API_KEY'));
+
+console.log('ADDRESS');
+test('Terrace', () => expectFound('I live at 742 Evergreen Terrace now', 'ADDRESS', '742 Evergreen Terrace'));
+test('Avenue, two words', () =>
+  expectFound('1600 Pennsylvania Avenue NW', 'ADDRESS', '1600 Pennsylvania Avenue'));
+test('abbreviation', () => expectFound('ship to 221 Baker St, London', 'ADDRESS', '221 Baker St'));
+test('ordinal street', () => expectFound('500 W 5th Ave', 'ADDRESS', '500 W 5th Ave'));
+test('lowercase sentence ending in "way"', () => expectNone('I have 3 dogs on the way', 'ADDRESS'));
+test('number without a street', () => expectNone('Route 66 was fun', 'ADDRESS'));
+
+console.log('CONTEXT');
+test('password', () => expectFound('my password is hunter2!', 'CONTEXT', 'hunter2'));
+test('capitalised phrase', () => expectFound('My PIN is 4821.', 'CONTEXT', '4821'));
+test('diagnosis', () =>
+  expectFound('I was diagnosed with type 2 diabetes. What should I eat?', 'CONTEXT', 'type 2 diabetes'));
+test('curly apostrophe', () => expectFound('I’ve been diagnosed with ADHD', 'CONTEXT', 'ADHD'));
+test('question about passwords', () => expectNone('what is a good password manager?', 'CONTEXT'));
+test('address phrase', () => expectFound('my address is 12 maple grove, springfield', 'CONTEXT', '12 maple grove, springfield'));
+test('stops at end of sentence', () => expectFound('My PIN is 4821. Thanks', 'CONTEXT', '4821'));
+
+console.log('scanText behaviour');
+test('overlapping matches: the specific detector wins', () => {
+  const matches = scanText('my address is 742 Evergreen Terrace');
+  assert.deepStrictEqual(matches.map((m) => m.type), ['ADDRESS']);
+});
+test('results are sorted by position', () => {
+  const matches = scanText('415-555-0132 then jane@example.com');
+  assert.deepStrictEqual(matches.map((m) => m.type), ['PHONE', 'EMAIL']);
+});
+test('disabled detectors are skipped', () => {
+  const matches = scanText('jane@example.com', { EMAIL: false });
+  assert.strictEqual(matches.length, 0);
+});
+test('clean text has no findings', () => {
+  assert.deepStrictEqual(scanText('Explain how a hash map works in Python.'), []);
+});
+test('redactText swaps in the placeholder', () => {
+  const text = 'mail jane@example.com please';
+  const [match] = scanText(text);
+  assert.strictEqual(redactText(text, match), 'mail [EMAIL] please');
+});
+
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exitCode = failed ? 1 : 0;

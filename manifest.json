@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "PromptGuard",
+  "version": "0.1.0",
+  "description": "Warns you before you share personal information with AI chatbots. All checks run locally; nothing leaves your browser.",
+
+  "permissions": ["storage"],
+
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["src/detectors.js", "src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  }
+}
