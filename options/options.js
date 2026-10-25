@@ -1,10 +1,3 @@
-/*
- * options.js: makes one checkbox for each check in detectors.js.
- *
- * The settings are saved like this: { enabledDetectors: { EMAIL: true, PHONE: false } }
- * If a check isn't in the list yet, it counts as turned on.
- */
-
 const detectorList = globalThis.PromptGuardDetectors.DETECTORS;
 const container = document.getElementById('detectors');
 const status = document.getElementById('status');
@@ -19,7 +12,6 @@ chrome.storage.sync.get({ enabledDetectors: {} }, function (result) {
     checkbox.type = 'checkbox';
     checkbox.checked = enabledDetectors[detector.type] !== false;
 
-    // Save whenever a box is checked or unchecked.
     checkbox.onchange = function () {
       enabledDetectors[detector.type] = checkbox.checked;
       chrome.storage.sync.set({ enabledDetectors: enabledDetectors });

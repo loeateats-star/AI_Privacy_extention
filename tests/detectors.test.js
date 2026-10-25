@@ -1,9 +1,3 @@
-/*
- * Tests for src/detectors.js. No test framework, just Node's built-in assert.
- *
- * Run from the project folder:
- *   node tests/detectors.test.js
- */
 'use strict';
 
 const assert = require('node:assert');
@@ -23,7 +17,6 @@ function test(name, fn) {
   }
 }
 
-/** Asserts that `text` contains a match of `type` whose text is `expected`. */
 function expectFound(text, type, expected) {
   const matches = scanText(text).filter((m) => m.type === type);
   const texts = matches.map((m) => m.text);
@@ -31,11 +24,10 @@ function expectFound(text, type, expected) {
     texts.includes(expected),
     `expected ${type} "${expected}" in "${text}", got ${JSON.stringify(texts)}`
   );
-  // The indexes must point at the matched text.
+
   for (const m of matches) assert.strictEqual(text.slice(m.start, m.end), m.text);
 }
 
-/** Asserts that `text` contains no match of `type`. */
 function expectNone(text, type) {
   const matches = scanText(text).filter((m) => m.type === type);
   assert.strictEqual(
@@ -107,7 +99,7 @@ test('phone with dots', () => expectFound('text me 415.555.0132', 'PHONE', '415.
 test('phone with brackets', () => expectFound('call (415) 555-0132', 'PHONE', '(415) 555-0132'));
 test('phone with spaces', () => expectFound('call +1 415 555 0132', 'PHONE', '+1 415 555 0132'));
 test('phone with no spaces', () => expectFound('call 4155550132', 'PHONE', '4155550132'));
-test('account number in pieces', () => expectFound('acct 12 3456 789', 'NUMBERS', '12 3456 789'));
+test('account number in pieces', () => expectFound('acct 12 3456 78', 'NUMBERS', '12 3456 78'));
 test('small numbers are fine', () => expectNone('I have 3 dogs and 2 cats', 'NUMBERS'));
 
 console.log('NAME');
@@ -116,10 +108,47 @@ test('first name only', () => expectFound('Tell Emily I said hi', 'NAME', 'Emily
 test('last name only', () => expectFound('Meeting with Mr Patel', 'NAME', 'Patel'));
 test('lowercase is not a name', () => expectNone('the james webb telescope', 'NAME'));
 
+console.log('SENSITIVE WORDS');
+test('password', () => expectFound('what is a good password manager?', 'KEYWORD', 'password'));
+test('address', () => expectFound('Send it to my address', 'KEYWORD', 'address'));
+test('number', () => expectFound('what is your phone number', 'KEYWORD', 'number'));
+test('plural', () => expectFound('Here are my passwords', 'KEYWORD', 'passwords'));
+test('capitalized', () => expectFound('Password reset', 'KEYWORD', 'Password'));
+
+console.log('EMAIL SIGN-OFFS');
+test('Sincerely, full name', () => expectFound('Sincerely, Lohit Kumar', 'NAME', 'Lohit Kumar'));
+test('sign-off on its own line', () => expectFound('Best regards,\nLohit\nPS see attached', 'NAME', 'Lohit'));
+test('Thanks with a name', () => expectFound('Thanks,\nPriya Sharma', 'NAME', 'Priya Sharma'));
+test('thanks in a normal sentence', () => expectNone('Thanks, that helped a lot!', 'NAME'));
+test('best in a normal sentence', () => expectNone('I think this is the best way', 'NAME'));
+
+console.log('HEURISTICS: numbers');
+test('9 digits written any way is an SSN', () => expectFound('id 123 45 6789', 'SSN', '123 45 6789'));
+test('date with dashes is skipped', () => expectNone('Meeting on 2024-01-15', 'NUMBERS'));
+test('US date is skipped', () => expectNone('due 01-15-2024', 'NUMBERS'));
+test('card with dashes', () => expectFound('5555-5555-5555-4444', 'CREDIT_CARD', '5555-5555-5555-4444'));
+
+console.log('HEURISTICS: passwords and keys');
+test('random password', () => expectFound('use Xk9#mP2q for wifi', 'SECRET', 'Xk9#mP2q'));
+test('password with symbols', () => expectFound('try MyP@ssw0rd', 'SECRET', 'MyP@ssw0rd'));
+test('unknown API key format', () =>
+  expectFound('token a8F3kL9qZ2mX7vB4nR6tY1wE', 'API_KEY', 'a8F3kL9qZ2mX7vB4nR6tY1wE'));
+test('normal long word', () => expectNone('internationalization is hard', 'SECRET'));
+test('version number', () => expectNone('install Python3.12 today', 'SECRET'));
+test('COVID-19', () => expectNone('COVID-19 rules', 'SECRET'));
+
+console.log('HEURISTICS: names');
+test('name not in the list, after Hi', () => expectFound('Hi Lohit, how are you?', 'NAME', 'Lohit'));
+test('two capitalized words mid-sentence', () => expectFound('I met Kavya Iyer yesterday', 'NAME', 'Kavya Iyer'));
+test('coding words are not names', () => expectNone('I use Python and React at work', 'NAME'));
+test('acronyms are not names', () => expectNone('the REST API returns JSON', 'NAME'));
+test('three capitalized words is a product', () => expectNone('I opened Visual Studio Code', 'NAME'));
+test('after "the"', () => expectNone('I visited the White House', 'NAME'));
+
 console.log('scanText behaviour');
 test('overlapping matches: the specific detector wins', () => {
   const matches = scanText('my address is 742 Evergreen Terrace');
-  assert.deepStrictEqual(matches.map((m) => m.type), ['ADDRESS']);
+  assert.deepStrictEqual(matches.map((m) => m.type), ['KEYWORD', 'ADDRESS']);
 });
 test('results are sorted by position', () => {
   const matches = scanText('415-555-0132 then jane@example.com');

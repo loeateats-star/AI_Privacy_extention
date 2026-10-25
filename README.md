@@ -1,93 +1,67 @@
 # PromptGuard
 
-A Chrome extension (Manifest V3) that warns you before you paste personal
-information into an AI chatbot. It works on **chatgpt.com**, **claude.ai** and
-**gemini.google.com**.
+A Chrome extension that warns you before you send personal info to an AI chatbot
+(ChatGPT, Claude, Gemini). Everything runs in your browser, nothing gets sent anywhere.
 
-When you type something like an email address, phone number, card number or
-API key, a yellow warning box pops up in the corner. For each finding you can
-**Redact** it (replace it with a placeholder like `[EMAIL]`) or **Dismiss** it.
+When you type something like a phone number, email, password or someone's name, a
+warning pops up in the corner. You can redact it (swap it for something like `[PHONE]`)
+or dismiss it. Clicking the extension icon shows how many times each type got flagged.
 
-**Privacy:** everything runs locally in your browser. The extension makes no
-network requests. The only permission it asks for is `storage`, which saves
-your detector on/off settings.
+## What it catches
 
-## File structure
+- Emails, phone numbers, SSNs, credit cards and other long numbers
+- Passwords and API keys (random-looking words)
+- Names
+- Street addresses
+- The words after things like "my password is", "I live at", "diagnosed with"
+- Sensitive words like password, address, number
+- Names after email sign-offs like "Sincerely,"
+
+## How it works
+
+The text gets split into words and each word gets checked with a few rules:
+
+- **Numbers:** numbers next to each other get joined and only the digits are counted.
+  9 = SSN, 10-11 = phone, 13-19 = card, other 7+ = long number. Dates are skipped.
+- **Passwords/keys:** a word gets points for having lowercase, capitals, digits and
+  symbols, for switching between letters and digits, and for being long. 5+ points
+  gets flagged.
+- **Names:** a word gets points for being in the names list, being capitalized in the
+  middle of a sentence, being next to another name, or coming after "Hi", "Dear", "Mr".
+  2+ points gets flagged.
+
+You can change `SECRET_POINTS_NEEDED` and `NAME_POINTS_NEEDED` in `src/detectors.js`
+to make it stricter or looser.
+
+## Files
 
 ```
-manifest.json              Extension settings: which sites, which scripts, options page
-src/
-  detectors.js             Splits the text into words and checks each one
-  content.js               Finds the chat box every second, scans it, shows the warning
-options/
-  options.html, options.js Settings page: turn each check on or off
-tests/
-  detectors.test.js        Tests for detectors.js (run with Node)
+manifest.json
+src/detectors.js     finds the personal info
+src/content.js       watches the chat box, shows the warning, counts findings
+options/             settings page to turn checks on/off
+popup/               shows the counts
+tests/               tests for detectors.js
 ```
 
-## Load the extension in Chrome
+## Install
 
-1. Open `chrome://extensions`.
-2. Turn on **Developer mode** (top right).
-3. Click **Load unpacked** and choose this folder (the one with `manifest.json`).
-4. Open chatgpt.com, claude.ai or gemini.google.com and type
-   `my email is test@example.com`. The warning box should pop up within a second.
+1. Go to `chrome://extensions`
+2. Turn on Developer mode
+3. Click Load unpacked and pick this folder
+4. Open ChatGPT, Claude or Gemini and type `my email is test@example.com`
 
-After you edit any file, click the reload icon on the PromptGuard card in
-`chrome://extensions`, then refresh the chat tab.
+After changing code, hit reload on the extension and refresh the chat tab.
 
-To open the settings, click **Details** on the PromptGuard card, then
-**Extension options**.
-
-**Debugging:** content script errors show up in the chat page's DevTools
-console (F12). Errors in the options page show up in that page's own DevTools.
-
-## Run the tests
-
-You only need Node (version 18 or newer):
+## Tests
 
 ```
 node tests/detectors.test.js
 ```
 
-## How detection works
+## Limitations
 
-`scanText()` in `src/detectors.js` splits the text into words at every space,
-then checks each word with simple `if` statements:
-
-- has an `@` with a dot after it: email
-- has 2 dashes, like `415-555-0132`: phone (`123-45-6789` is an SSN)
-- 13 to 19 digits, or four groups of 4 digits: credit card
-- a number followed by `St`, `Ave`, `Road`...: street address
-- numbers in a row, like `(415) 555 0132` or `4155550132`: phone or long number
-- a capitalized word from `FIRST_NAMES` (100 names) or `LAST_NAMES` (50 names): name
-
-Then it flags the word after `password`, `pin`, `ssn`... (when written
-`password is X`, `password: X` or `password = X`), and the words after
-phrases like "diagnosed with" or "I live at". To add a name, phrase or secret
-word, add it to the matching array at the top of the file.
-
-For speed, the name and word arrays are turned into `Set`s once when the file
-loads, so checking a word against 150 names is a single lookup instead of 150
-comparisons. A normal chat message scans in well under 1 millisecond. To add a new check, add an `if` to `checkWord()` and an
-entry to `DETECTORS` (the options page and warning box read from that list).
-
-## Add a new site
-
-1. Right-click the site's chat box, choose **Inspect**, and find the element
-   with `contenteditable="true"` (or a `<textarea>`).
-2. Add a selector for it to `CHAT_BOX_SELECTORS` at the top of `src/content.js`.
-3. Add the site's URL (like `"https://www.perplexity.ai/*"`) to `matches` in
-   `manifest.json`.
-4. Reload the extension.
-
-## Known limitations
-
-- Detection uses simple word checks, so it will miss some things and flag
-  some harmless ones. Only names in the lists are caught. Phone numbers must use dashes (`(415) 555-0132` is
-  missed), and street addresses must use a capitalised street word.
-- It does not stop you from sending. It only warns you.
-- Chat sites change their HTML often. If the warning stops appearing on a site,
-  update `CHAT_BOX_SELECTORS` in `content.js`.
-- Redact can fail if the private text is split across bold/italic formatting.
-  You'll get a popup asking you to delete it yourself.
+- It only warns you, it doesn't stop you from sending.
+- It checks once a second, so if you type and hit enter really fast it might miss it.
+- Some false alarms, like "Machine Learning" looking like a name.
+- If a chat site changes its layout, the selectors in `content.js` need updating.

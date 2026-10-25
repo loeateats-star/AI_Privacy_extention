@@ -1,50 +1,32 @@
-/*
-  content.js: runs on ChatGPT, Claude and Gemini.
- 
-  Every second we:
-    1. find the chat box
-    2. read the text in it
-    3. if the text changed, scan it with scanText() from detectors.js
-    4. show a warning box if anything was found
- 
- */
-
 const detectors = globalThis.PromptGuardDetectors;
 
-// Where the chat box is on each site. If the extension stops working on a
-// site, right click the chat box, click Inspect, and update this list.
 const CHAT_BOX_SELECTORS = [
-  '#prompt-textarea', // ChatGPT
-  'div.ProseMirror[contenteditable="true"]', // Claude
-  '.ql-editor[contenteditable="true"]', // Gemini
+  '#prompt-textarea',
+  'div.ProseMirror[contenteditable="true"]',
+  '.ql-editor[contenteditable="true"]',
 ];
 
-let lastText = ''; // the text we scanned last time
-let enabled = {}; // which checks are turned on, from the options page
-let dismissed = []; // things the user clicked "Dismiss" on
-
-
-// Settings
+let lastText = '';
+let enabled = {};
+let dismissed = [];
+let currentFindings = [];
+let counted = [];
 
 chrome.storage.sync.get({ enabledDetectors: {} }, function (result) {
   enabled = result.enabledDetectors;
 });
 
-// If the user changes a setting, use the new settings right away.
 chrome.storage.onChanged.addListener(function (changes) {
   if (changes.enabledDetectors) {
     enabled = changes.enabledDetectors.newValue || {};
-    lastText = ''; // forces a rescan
+    lastText = '';
   }
 });
-
-// The chat box
 
 function findChatBox() {
   for (const selector of CHAT_BOX_SELECTORS) {
     const boxes = document.querySelectorAll(selector);
     for (const box of boxes) {
-      // Skip hidden boxes (offsetHeight is 0 when you can't see it).
       if (box.offsetHeight > 0) return box;
     }
   }
@@ -52,14 +34,9 @@ function findChatBox() {
 }
 
 function getText(box) {
-  // A <textarea> keeps its text in .value, other boxes use .innerText
   if (box.tagName === 'TEXTAREA') return box.value;
   return box.innerText;
 }
-
-// ---------------------------------------------------------------------------
-// Checking every second
-// ---------------------------------------------------------------------------
 
 setInterval(checkChatBox, 1000);
 
@@ -71,12 +48,18 @@ function checkChatBox() {
   }
 
   const text = getText(box);
-  if (text === lastText) return; // nothing changed, no need to scan again
+
+  if (text === lastText) {
+    countFindings(currentFindings);
+    return;
+  }
   lastText = text;
 
-  let findings = detectors.scanText(text, enabled);
+  if (text.trim() === '') counted = [];
 
-  // Take out anything the user already dismissed.
+  let findings = detectors.scanText(text, enabled);
+  currentFindings = findings;
+
   findings = findings.filter(function (finding) {
     return !dismissed.includes(finding.type + ':' + finding.text);
   });
@@ -88,9 +71,28 @@ function checkChatBox() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// The warning box
-// ---------------------------------------------------------------------------
+function countFindings(findings) {
+  const newFindings = [];
+  for (const finding of findings) {
+    const key = finding.type + ':' + finding.text;
+    if (!counted.includes(key)) {
+      counted.push(key);
+      newFindings.push(finding);
+    }
+  }
+  if (newFindings.length === 0) return;
+
+  chrome.storage.local.get({ counts: {} }, function (result) {
+    const counts = result.counts;
+    for (const finding of newFindings) {
+      let count = counts[finding.type];
+      if (count === undefined) count = 0;
+      count = count + 1;
+      counts[finding.type] = count;
+    }
+    chrome.storage.local.set({ counts: counts });
+  });
+}
 
 const warningBox = document.createElement('div');
 warningBox.style.position = 'fixed';
@@ -109,7 +111,7 @@ warningBox.style.display = 'none';
 document.body.appendChild(warningBox);
 
 function showWarning(box, findings) {
-  warningBox.innerHTML = ''; // clear the old warning
+  warningBox.innerHTML = '';
 
   const title = document.createElement('b');
   title.textContent = 'Careful! This looks like personal info:';
@@ -119,7 +121,6 @@ function showWarning(box, findings) {
     const row = document.createElement('div');
     row.style.marginTop = '8px';
 
-    // Use textContent (not innerHTML) so the typed text can't add HTML.
     const label = document.createElement('div');
     label.textContent = detectors.getDetector(finding.type).label + ': ' + finding.text;
     row.appendChild(label);
@@ -136,7 +137,7 @@ function showWarning(box, findings) {
     dismissButton.style.marginLeft = '5px';
     dismissButton.onclick = function () {
       dismissed.push(finding.type + ':' + finding.text);
-      lastText = ''; // forces a rescan
+      lastText = '';
       checkChatBox();
     };
     row.appendChild(dismissButton);
@@ -151,20 +152,13 @@ function hideWarning() {
   warningBox.style.display = 'none';
 }
 
-// ---------------------------------------------------------------------------
-// Redacting (swapping the private text for something like [EMAIL])
-// ---------------------------------------------------------------------------
-
 function redact(box, finding) {
   const placeholder = detectors.getDetector(finding.type).placeholder;
 
   if (box.tagName === 'TEXTAREA') {
     box.value = box.value.replace(finding.text, placeholder);
-    // Tell the website the text changed.
     box.dispatchEvent(new Event('input', { bubbles: true }));
   } else {
-    // The chat sites use fancy editors made of lots of little pieces of text.
-    // Find the piece that has our text in it and select just that part.
     const textNode = findTextNode(box, finding.text);
     if (textNode === null) {
       alert('PromptGuard could not redact that. Please delete it yourself.');
@@ -180,17 +174,13 @@ function redact(box, finding) {
     selection.removeAllRanges();
     selection.addRange(range);
 
-    // This "types" the placeholder over the selected text, so the website
-    // notices the change the same way it would if you typed it.
     document.execCommand('insertText', false, placeholder);
   }
 
-  lastText = ''; // forces a rescan
+  lastText = '';
   checkChatBox();
 }
 
-// Looks through the box (and everything inside it) for a piece of text
-// that contains searchText. Returns null if it can't find one.
 function findTextNode(node, searchText) {
   if (node.nodeType === Node.TEXT_NODE) {
     if (node.data.includes(searchText)) return node;
