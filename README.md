@@ -13,8 +13,9 @@ or dismiss it. Clicking the extension icon shows how many times each type got fl
 - Passwords and API keys (random-looking words)
 - Names
 - Street addresses
+- Ages, like "I am 19", "I'm 17" or "7 years old"
 - The words after things like "my password is", "I live at", "diagnosed with"
-- Sensitive words like password, address, number
+- Sensitive words like password, address, number, diagnosed
 - Names after email sign-offs like "Sincerely,"
 
 ## How it works

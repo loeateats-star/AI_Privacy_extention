@@ -22,6 +22,8 @@
       description: 'Words that look like names: in the names list, capitalized mid-sentence, after "Hi" or "Mr", etc.' },
     { type: 'CONTEXT', label: 'Personal detail', placeholder: '[PRIVATE]',
       description: 'The word after "password", "pin" or "ssn", and the words after "address is", "diagnosed with", and so on.' },
+    { type: 'AGE', label: 'Age', placeholder: '[AGE]',
+      description: 'A number from 1 to 120 after "I am", "I\'m" or "age", or before "years old".' },
     { type: 'KEYWORD', label: 'Sensitive word', placeholder: '[REDACTED]',
       description: 'Words like password, address or number, which often come right before personal info.' },
   ];
@@ -36,6 +38,10 @@
 
   const NOT_NAME_CLUE_WORDS = ['the', 'a', 'an'];
 
+  const AGE_CLUE_WORDS = ["i'm", 'i’m', 'im', 'age', 'aged'];
+  const AGE_ENDING_WORDS = ['and', 'but', 'so', 'now', 'today', 'this', 'next'];
+  const YEARS_WORDS = ['years', 'year', 'yrs', 'yr'];
+
   const STREET_WORDS = [
     'Street', 'St', 'Avenue', 'Ave', 'Road', 'Rd', 'Drive', 'Lane', 'Ln',
     'Boulevard', 'Blvd', 'Court', 'Ct', 'Way', 'Place', 'Pl', 'Terrace', 'Circle',
@@ -49,7 +55,7 @@
 
   const SENSITIVE_WORDS = [
     'password', 'passcode', 'pin', 'ssn', 'address', 'number', 'phone', 'email',
-    'username', 'login', 'birthday', 'bank', 'account', 'diagnosis', 'medication',
+    'username', 'login', 'birthday', 'bank', 'account', 'diagnosis', 'diagnosed', 'medication',
   ];
 
   const SIGN_OFF_WORDS = [
@@ -97,6 +103,9 @@
   const LAST_NAME_SET = new Set(LAST_NAMES);
   const NAME_CLUE_SET = new Set(NAME_CLUE_WORDS);
   const NOT_NAME_CLUE_SET = new Set(NOT_NAME_CLUE_WORDS);
+  const AGE_CLUE_SET = new Set(AGE_CLUE_WORDS);
+  const AGE_ENDING_SET = new Set(AGE_ENDING_WORDS);
+  const YEARS_SET = new Set(YEARS_WORDS);
 
   for (const rule of CONTEXT_PHRASES) {
     rule.words = rule.phrase.split(' ');
@@ -317,6 +326,37 @@
     return points;
   }
 
+  function ageEnd(words, i) {
+    const word = words[i];
+    if (word.lower.endsWith('-year-old') || word.lower.endsWith('-years-old')) {
+      const number = word.lower.split('-')[0];
+      if (isAllDigits(number) && Number(number) >= 1 && Number(number) <= 120) return i;
+      return -1;
+    }
+
+    if (!isAllDigits(word.text)) return -1;
+    const age = Number(word.text);
+    if (age < 1 || age > 120) return -1;
+
+    const next = words[i + 1];
+    const afterNext = words[i + 2];
+    if (next && YEARS_SET.has(next.lower)) {
+      if (afterNext && afterNext.lower === 'old') return i + 2;
+      return i + 1;
+    }
+    if (next && (next.lower === 'yo' || next.lower === 'y/o')) return i + 1;
+
+    const before = words[i - 1];
+    const twoBefore = words[i - 2];
+    const afterIAm = before && before.lower === 'am' && twoBefore && twoBefore.lower === 'i';
+    const afterClue = before && AGE_CLUE_SET.has(before.lower);
+    if (!afterIAm && !afterClue) return -1;
+
+    const endsHere = !next || word.endsSentence || word.endsWithComma || word.endsLine;
+    if (endsHere || AGE_ENDING_SET.has(next.lower)) return i;
+    return -1;
+  }
+
   function checkWord(word) {
     const at = word.indexOf('@');
     if (at > 0 && word.indexOf('.', at) > at + 1) return 'EMAIL';
@@ -384,6 +424,13 @@
           i = last;
           continue;
         }
+      }
+
+      const ageLast = ageEnd(words, i);
+      if (ageLast !== -1) {
+        flag('AGE', i, ageLast);
+        i = ageLast;
+        continue;
       }
 
       if (isAllDigits(word) && word.length <= 5) {

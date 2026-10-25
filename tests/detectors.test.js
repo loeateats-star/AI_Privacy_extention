@@ -145,6 +145,17 @@ test('acronyms are not names', () => expectNone('the REST API returns JSON', 'NA
 test('three capitalized words is a product', () => expectNone('I opened Visual Studio Code', 'NAME'));
 test('after "the"', () => expectNone('I visited the White House', 'NAME'));
 
+console.log('AGE');
+test('I am 19', () => expectFound('I am 19', 'AGE', '19'));
+test('years old', () => expectFound('I am 19 years old', 'AGE', '19 years old'));
+test("I'm with and", () => expectFound("I'm 17 and I need help", 'AGE', '17'));
+test('age colon', () => expectFound('age: 42', 'AGE', '42'));
+test('someone else', () => expectFound('My son is 7 years old', 'AGE', '7 years old'));
+test('hyphenated', () => expectFound('a 34-year-old nurse', 'AGE', '34-year-old'));
+test('I am 5 minutes late', () => expectNone('I am 5 minutes late', 'AGE'));
+test('too old to be an age', () => expectNone('I am 200', 'AGE'));
+test('diagnosed is a sensitive word', () => expectFound('I was diagnosed with ADHD', 'KEYWORD', 'diagnosed'));
+
 console.log('scanText behaviour');
 test('overlapping matches: the specific detector wins', () => {
   const matches = scanText('my address is 742 Evergreen Terrace');
